@@ -1,0 +1,7 @@
+{
+  "contract_address": "0xc2D874288498544daAc98478f521BFF870a29c3D",
+  "deployer_address": "0xE863e9Cc0bAb0208b60E0C096773be2b2d9D8cF3",
+  "deployment_tx": "0x33041edada69f5f755da1df37d15472caf4198c202e326f6874f15d006c93752",
+  "network": "ganache-local",
+  "deployed_at": "2"
+}

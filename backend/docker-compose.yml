@@ -1,0 +1,67 @@
+version: '3.8'
+
+services:
+  backend:
+    build: .
+    container_name: file-sharing-backend
+    ports:
+      - "5000:5000"
+    volumes:
+      - .:/app                    # ← Live sync your code
+      - /app/__pycache__          # ← Exclude Python cache
+    environment:
+      - FLASK_ENV=development     # ← Enables auto-reload
+      - FLASK_DEBUG=1             # ← Enables debug mode
+      - PYTHONUNBUFFERED=1        # ← See logs immediately
+      - DATABASE_HOST=mysql
+      - GANACHE_URL=http://ganache:8545
+      - IPFS_HOST=ipfs
+    depends_on:
+      - mysql
+      - ganache
+      - ipfs
+    networks:
+      - file-sharing-network
+    # Enable live reload
+    command: python app.py
+
+  mysql:
+    image: mysql:8.0
+    container_name: file-sharing-mysql
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: password123
+      MYSQL_DATABASE: file_sharing_db
+    volumes:
+      - mysql-data:/var/lib/mysql
+    networks:
+      - file-sharing-network
+
+  ganache:
+    image: trufflesuite/ganache:latest
+    container_name: file-sharing-ganache
+    ports:
+      - "8545:8545"
+    command: --accounts 10 --defaultBalanceEther 100 --networkId 5777 --host 0.0.0.0
+    networks:
+      - file-sharing-network
+
+  ipfs:
+    image: ipfs/kubo:latest
+    container_name: file-sharing-ipfs
+    ports:
+      - "5001:5001"
+      - "8080:8080"
+    volumes:
+      - ipfs-data:/data/ipfs
+    networks:
+      - file-sharing-network
+
+networks:
+  file-sharing-network:
+    driver: bridge
+
+volumes:
+  mysql-data:
+  ipfs-data:
