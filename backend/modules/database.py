@@ -78,6 +78,33 @@ class DatabaseManager:
         self.conn.commit()
         print("✓ Database tables created/verified")
     
+
+    def get_user(self, username):
+        """Get user by username"""
+        query = "SELECT * FROM users WHERE username = %s"
+        result = self.execute_query(query, (username,), fetch=True)
+        
+        if result:
+            user = result[0]
+            # Parse attributes from JSON string if needed
+            attributes = user.get('attributes')
+            if isinstance(attributes, str):
+                import json
+                attributes = json.loads(attributes)
+            
+            return {
+                'id': user['id'],
+                'username': user['username'],
+                'email': user['email'],
+                'bcid': user['bcid'],
+                'blockchain_address': user['blockchain_address'],
+                'attributes': attributes,
+                'private_key': user['private_key'],
+                'public_key': user['public_key'],
+                'created_at': user['created_at']
+            }
+        return None
+
     def insert_user(self, user_data):
         """Insert new user"""
         query = """

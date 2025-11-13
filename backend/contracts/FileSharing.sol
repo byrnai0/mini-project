@@ -65,16 +65,23 @@ contract FileSharing {
     }
     
     // Get file metadata
-    function getFileMetadata(string memory _cid) public view returns (
-        string memory owner,
-        string memory encryptedKey,
+    function getFileMetadata(string memory cid) public view returns (
+        address owner,
+        string memory fileCid,
         string memory accessPolicy,
-        uint256 timestamp
+        uint256 timestamp,
+        bool isActive
     ) {
-        require(files[_cid].isActive, "File not found or inactive");
+        File memory file = files[cid];
+        require(file.timestamp != 0, "File does not exist");
         
-        FileMetadata memory file = files[_cid];
-        return (file.owner, file.encryptedKey, file.accessPolicy, file.timestamp);
+        return (
+            file.owner,
+            file.cid,
+            file.accessPolicy,
+            file.timestamp,
+            file.isActive
+        );
     }
     
     // Log file access (for audit trail)

@@ -64,18 +64,60 @@ class BlockchainManager:
         return receipt.transactionHash.hex()
     
     def get_file_metadata(self, cid):
-        """Retrieve file metadata from blockchain"""
+        """
+        Get file metadata from blockchain
+        Returns: dict with file info or None
+        """
         try:
-            metadata = self.contract.functions.getFileMetadata(cid).call()
-            return {
-                'owner': metadata[0],
-                'encryptedKey': metadata[1],
-                'accessPolicy': metadata[2],
-                'timestamp': metadata[3]
-            }
+            # Call view function - no transaction needed
+            result = self.contract.functions.getFileMetadata(cid).call()
+            
+            # Unpack the tuple returned by Solidity
+            # Returns: (owner, cid, accessPolicy, timestamp, isActive)
+            if result and result[0] != '0x0000000000000000000000000000000000000000':
+                return {
+                    'owner': result[0],
+                    'cid': result[1],
+                    'access_policy': result[2],
+                    'timestamp': result[3],
+                    'is_active': result[4]
+                }
+            return None
+            
         except Exception as e:
-            raise Exception(f"File not found: {str(e)}")
+            print(f"Error getting file metadata: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return None
     
+    def check_file_access(self, cid, user_address):
+        """
+        Check if user has access to file
+        Returns: bool
+        """
+        try:
+            # Check if file exists first
+            metadata = self.get_file_metadata(cid)
+            if not metadata:
+                print(f"File {cid} not found on blockchain")
+                return False
+            
+            # Check if user is owner
+            if metadata['owner'].lower() == user_address.lower():
+                print(f"User {user_address} is the owner")
+                return True
+            
+            # For now, just check if file is active
+            # In production, you'd check access policy here
+            return metadata['is_active']
+            
+        except Exception as e:
+            print(f"Error checking file access: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return False
+
+
     def get_user_info(self, address):
         """Get user information from blockchain"""
         try:
