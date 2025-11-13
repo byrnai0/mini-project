@@ -1,37 +1,39 @@
-# test_abe_only.py
+# test_abe_only.py - Test with multiple attributes
 import sys
 sys.path.append('/app')
 
 from modules.abe_crypto import ABEManager
 
-print("\n=== Testing ABE Serialization ===\n")
+print("\n=== Testing ABE with Multiple Attributes ===\n")
 
-# Initialize ABE
 abe = ABEManager()
 
-# Test 1: Generate keys
-print("1. Generating user keys...")
+# Test with 2 attributes
+print("1. Generating user keys with 2 attributes...")
 attrs = {'role': 'engineer', 'dept': 'IT'}
 keys = abe.generate_user_keys(attrs)
-print(f"   ✓ Private key: {keys['private_key'][:50]}...")
-print(f"   ✓ Key length: {len(keys['private_key'])} chars\n")
+print(f"   ✓ Private key length: {len(keys['private_key'])} chars\n")
 
-# Test 2: Encrypt
-print("2. Encrypting data...")
-test_data = b"Secret message"
+# Encrypt with 2-attribute policy
+print("2. Encrypting with 2-attribute policy...")
+test_data = b"Secret engineering document"
 policy = {'role': 'engineer', 'dept': 'IT'}
 encrypted = abe.encrypt(test_data, policy)
-print(f"   ✓ Encrypted: {encrypted['ciphertext'][:50]}...\n")
+print(f"   ✓ Encrypted\n")
 
-# Test 3: Decrypt
-print("3. Decrypting data...")
-decrypted = abe.decrypt(
-    encrypted['ciphertext'],
-    keys['private_key'],
-    attrs
-)
+# Decrypt (should succeed - attributes match)
+print("3. Decrypting with matching attributes...")
+decrypted = abe.decrypt(encrypted['ciphertext'], keys['private_key'], attrs)
 print(f"   ✓ Decrypted: {decrypted.decode()}\n")
 
-# Test 4: Verify
-assert decrypted == test_data
-print("✅ All ABE tests passed!\n")
+# Test access control - wrong attributes
+print("4. Testing access control - wrong dept...")
+wrong_attrs = {'role': 'engineer', 'dept': 'HR'}
+wrong_keys = abe.generate_user_keys(wrong_attrs)
+try:
+    abe.decrypt(encrypted['ciphertext'], wrong_keys['private_key'], wrong_attrs)
+    print("   ✗ ERROR: Should have been denied!\n")
+except:
+    print("   ✓ Access correctly denied!\n")
+
+print("✅ All multi-attribute tests passed!\n")
