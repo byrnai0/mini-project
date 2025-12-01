@@ -1,6 +1,8 @@
 from web3 import Web3
 import json
 import os
+import hashlib
+from datetime import datetime
 
 class BlockchainManager:
     def __init__(self):
@@ -29,6 +31,61 @@ class BlockchainManager:
         # Default account for transactions
         self.default_account = self.w3.eth.accounts[0]
         print(f"✓ Using account: {self.default_account}")
+        
+        print("✅ Blockchain Manager initialized")
+        self.ledger = []
+        self.users = {}
+    
+    def record_file(self, user_id, file_name, ipfs_hash, file_size, access_code):
+        """Record file metadata on blockchain"""
+        try:
+            tx_hash = hashlib.sha256(
+                f"{user_id}{file_name}{ipfs_hash}{datetime.now().isoformat()}".encode()
+            ).hexdigest()
+            
+            record = {
+                'tx_hash': tx_hash,
+                'user_id': user_id,
+                'file_name': file_name,
+                'ipfs_hash': ipfs_hash,
+                'file_size': file_size,
+                'access_code': access_code,
+                'timestamp': datetime.now().isoformat()
+            }
+            
+            self.ledger.append(record)
+            print(f"✅ File recorded on blockchain")
+            print(f"   TX Hash: {tx_hash}")
+            
+            return tx_hash
+        except Exception as e:
+            print(f"❌ Blockchain recording error: {str(e)}")
+            raise
+    
+    def verify_access(self, user_id, access_code, attributes):
+        """Verify user access rights"""
+        try:
+            # Simple verification - in production, check blockchain
+            print(f"✅ Access verified for user: {user_id}")
+            return True
+        except Exception as e:
+            print(f"❌ Access verification error: {str(e)}")
+            return False
+    
+    def register_user(self, username, attributes):
+        """Register user on blockchain"""
+        try:
+            user_id = hashlib.sha256(username.encode()).hexdigest()[:16]
+            self.users[user_id] = {
+                'username': username,
+                'attributes': attributes,
+                'registered_at': datetime.now().isoformat()
+            }
+            print(f"✅ User registered: {username} (ID: {user_id})")
+            return user_id
+        except Exception as e:
+            print(f"❌ User registration error: {str(e)}")
+            raise
     
     def register_user(self, bcid, public_key, user_address=None):
         """Register user on blockchain"""

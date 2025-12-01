@@ -1,182 +1,338 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
-import { Download, ArrowLeft, File } from "lucide-react";
+import { Download as DownloadIcon, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Card } from "@/components/ui/card";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
 export default function DownloadPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const [accessCode, setAccessCode] = useState(searchParams.get("code") || "");
-  const [loading, setLoading] = useState(false);
-  const [fileInfo, setFileInfo] = useState<any>(null);
+  const [accessCode, setAccessCode] = useState<string>(
+    searchParams.get("code") || ""
+  );
   const [downloading, setDownloading] = useState(false);
+  const [user, setUser] = useState<{ id: string; email: string; role: string } | null>(null);
+  const [pageLoading, setPageLoading] = useState(true);
 
+  // Check user session on mount
   useEffect(() => {
-    const code = searchParams.get("code");
-    if (code) {
-      setAccessCode(code);
-      fetchFileInfo(code);
-    }
-  }, [searchParams]);
+    const checkSession = async () => {
+      try {
+        console.log("\n" + "=".repeat(60));
+        console.log("🔐 CHECKING AUTH SESSION (Download Page)");
+        console.log("=".repeat(60));
 
-  const fetchFileInfo = async (code: string) => {
-    if (!code || code.length !== 6) return;
+        const {
+          data: { session },
+          error: sessionError,
+        } = await supabase.auth.getSession();
 
-    setLoading(true);
-    try {
-      const { data, error } = await supabase
-        .from("file_shares")
-        .select("*")
-        .eq("access_code", code.toUpperCase())
-        .single();
+        if (sessionError) {
+          console.error("❌ Session error:", sessionError);
+          setPageLoading(false);
+          return;
+        }
 
-      if (error) {
-        toast.error("Invalid access code");
-        setFileInfo(null);
-      } else if (new Date(data.expires_at) < new Date()) {
-        toast.error("This file has expired");
-        setFileInfo(null);
-      } else {
-        setFileInfo(data);
+        if (session?.user) {
+          console.log(`✅ Session found for user: ${session.user.email}`);
+
+          try {
+            const { data: userData, error: userError } = await supabase
+              .from("users")
+              .select("role")
+              .eq("id", session.user.id)
+              .single();
+
+            if (userError && userError.code !== "PGRST116") {
+              console.error("User fetch error:", userError);
+            }
+
+            const role = (userData as any)?.role ?? "user";
+            console.log(`👥 User role: ${role}`);
+
+            setUser({
+              id: session.user.id,
+              email: session.user.email || "",
+              role,
+            });
+          } catch (error) {
+            console.error("Error fetching user data:", error);
+            // Set default user even if fetch fails
+            setUser({
+              id: session.user.id,
+              email: session.user.email || "",
+              role: "user",
+            });
+          }
+        } else {
+          console.log("⚠️ No active session - proceeding as guest");
+          setUser(null);
+        }
+      } catch (error) {
+        console.error("Error checking session:", error);
+      } finally {
+        setPageLoading(false);
       }
-    } catch (err) {
-      toast.error("Failed to fetch file information");
-    } finally {
-      setLoading(false);
-    }
-  };
+    };
+
+    checkSession();
+
+    // Listen for auth changes
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log(`\n🔄 Auth state changed: ${event}`);
+
+      if (event === "SIGNED_OUT") {
+        console.log("🚪 User signed out");
+        setUser(null);
+      } else if (event === "SIGNED_IN" || event === "USER_UPDATED") {
+        if (session?.user) {
+          try {
+            const { data: userData, error: userError } = await supabase
+              .from("users")
+              .select("role")
+              .eq("id", session.user.id)
+              .single();
+
+            const role = (userData as any)?.role ?? "user";
+            console.log(`✅ Auth updated - User role: ${role}`);
+
+            setUser({
+              id: session.user.id,
+              email: session.user.email || "",
+              role,
+            });
+          } catch (error) {
+            console.error("Error fetching user data:", error);
+            setUser({
+              id: session.user.id,
+              email: session.user.email || "",
+              role: "user",
+            });
+          }
+        }
+      }
+    });
+
+    return () => {
+      subscription?.unsubscribe();
+    };
+  }, []);
 
   const handleDownload = async () => {
-    if (!fileInfo) return;
+    if (!accessCode.trim()) {
+      toast.error("Please enter access code");
+      return;
+    }
 
     setDownloading(true);
     try {
-      const { data, error } = await supabase.storage
-        .from("shared-files")
-        .download(fileInfo.file_path);
+      console.log("\n" + "=".repeat(60));
+      console.log("📥 FILE DOWNLOAD & DECRYPTION PROCESS");
+      console.log("=".repeat(60));
+      
+      const userRole = user?.role || "user";
+      const userId = user?.id || "guest_user";
+      
+      console.log(`\n🎯 Access Code: ${accessCode}`);
+      console.log(`👤 User ID: ${userId}`);
+      console.log(`👥 User Role: ${userRole}`);
 
-      if (error) throw error;
+      toast.loading("📥 Connecting to backend...");
 
-      // Create download link
-      const url = window.URL.createObjectURL(data);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = fileInfo.file_name;
-      document.body.appendChild(a);
-      a.click();
+      const userAttributes = {
+        role: userRole,
+        department: "general",
+      };
+
+      console.log(`📋 User Attributes: ${JSON.stringify(userAttributes)}`);
+      console.log("\n[STEP 1] Sending download request to backend...");
+
+      const startTime = performance.now();
+
+      const response = await fetch(
+        `http://localhost:5000/api/download/${accessCode.toUpperCase()}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            user_id: userId,
+            attributes: userAttributes,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        let errorMessage = "Failed to download file";
+        try {
+          const error = await response.json();
+          errorMessage = error.error || errorMessage;
+        } catch {
+          errorMessage = `Server error: ${response.status}`;
+        }
+        console.error(`❌ Backend error (${response.status}):`, errorMessage);
+        throw new Error(errorMessage);
+      }
+
+      console.log("\n[STEP 2] File received from backend");
+      const blob = await response.blob();
+      const downloadTime = performance.now() - startTime;
+
+      console.log(`✅ Download completed in ${downloadTime.toFixed(2)}ms`);
+      console.log(`📦 File size: ${(blob.size / 1024 / 1024).toFixed(2)} MB`);
+
+      console.log("\n[STEP 3] Initiating browser download...");
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `downloaded_file`;
+      link.click();
       window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
 
-      // Update download count
-      await supabase
-        .from("file_shares")
-        .update({ download_count: fileInfo.download_count + 1 })
-        .eq("id", fileInfo.id);
+      console.log(`✅ Download started`);
 
-      toast.success("File downloaded successfully!");
-    } catch (err) {
-      toast.error("Failed to download file");
+      console.log("\n" + "=".repeat(60));
+      console.log("✅ FILE DOWNLOAD COMPLETED SUCCESSFULLY");
+      console.log("=".repeat(60));
+      console.log(`\n📊 Summary:`);
+      console.log(`   ├─ Access Code: ${accessCode}`);
+      console.log(`   ├─ User ID: ${userId}`);
+      console.log(`   ├─ User Role: ${userRole}`);
+      console.log(`   ├─ File Size: ${(blob.size / 1024 / 1024).toFixed(2)} MB`);
+      console.log(`   ├─ Download Time: ${downloadTime.toFixed(2)}ms`);
+      console.log(`   ├─ Decryption: ABE (Backend)`);
+      console.log(`   └─ Status: Success\n`);
+
+      toast.dismiss();
+      toast.success("✅ File downloaded successfully!");
+      setAccessCode("");
+    } catch (err: any) {
+      console.error("\n❌ DOWNLOAD ERROR:", err);
+      console.log("=".repeat(60) + "\n");
+      toast.dismiss();
+
+      if (err.message.includes("Failed to fetch")) {
+        toast.error(
+          "❌ Cannot connect to backend. Make sure http://localhost:5000 is running"
+        );
+      } else {
+        toast.error(err?.message || "Failed to download file");
+      }
     } finally {
       setDownloading(false);
     }
   };
 
-  const formatFileSize = (bytes: number) => {
-    if (bytes === 0) return "0 Bytes";
-    const k = 1024;
-    const sizes = ["Bytes", "KB", "MB", "GB"];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + " " + sizes[i];
-  };
+  if (pageLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-subtle flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-foreground font-medium">Loading...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-gradient-subtle flex flex-col">
+    <div className="min-h-screen bg-gradient-subtle">
       <header className="border-b border-border bg-background/50 backdrop-blur-sm sticky top-0 z-10">
-        <div className="container mx-auto px-4 py-4">
-          <Button
-            variant="ghost"
+        <div className="container mx-auto px-4 py-6">
+          <button
             onClick={() => navigate("/")}
-            className="gap-2"
+            className="flex items-center gap-2 text-primary hover:text-primary/80 transition-colors mb-4"
           >
             <ArrowLeft className="w-4 h-4" />
             Back to Upload
-          </Button>
+          </button>
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-3xl font-bold text-foreground">Receive File</h1>
+              <p className="text-muted-foreground mt-2">
+                Enter the access code to download a file
+              </p>
+            </div>
+            {user && (
+              <div className="text-right">
+                <p className="text-sm text-foreground font-medium">{user.email}</p>
+                <p className="text-xs text-muted-foreground capitalize">
+                  Role: {user.role}
+                </p>
+              </div>
+            )}
+          </div>
         </div>
       </header>
 
-      <main className="flex-1 container mx-auto px-4 py-12 flex items-center justify-center">
-        <div className="w-full max-w-md space-y-6">
-          <div className="text-center">
-            <h1 className="text-4xl font-bold mb-2 text-foreground">
-              Receive File
-            </h1>
-            <p className="text-muted-foreground">
-              Enter the access code to Receive your file
-            </p>
-          </div>
+      <main className="container mx-auto px-4 py-12">
+        <div className="max-w-md w-full mx-auto">
+          <div className="bg-background rounded-lg shadow-lg p-8 border border-border space-y-6">
+            <div className="flex justify-center">
+              <div className="p-3 rounded-lg bg-primary/10">
+                <DownloadIcon className="w-8 h-8 text-primary" />
+              </div>
+            </div>
 
-          <Card className="p-6 shadow-custom-lg border-border">
             <div className="space-y-4">
               <div>
-                <label className="text-sm font-medium text-foreground block mb-2">
+                <label className="block text-sm font-medium text-foreground mb-2">
                   Access Code
                 </label>
-                <Input
-                  placeholder="Enter 6-digit code"
+                <input
+                  type="text"
                   value={accessCode}
                   onChange={(e) => setAccessCode(e.target.value.toUpperCase())}
+                  placeholder="e.g., ABC123"
+                  className="w-full px-4 py-2 rounded-lg border border-border bg-background text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                  disabled={downloading}
                   maxLength={6}
-                  className="font-mono text-center text-lg tracking-wider"
                 />
+                <p className="text-xs text-muted-foreground mt-2">
+                  Ask the file sender for the access code
+                </p>
               </div>
 
-              {!fileInfo && (
-                <Button
-                  onClick={() => fetchFileInfo(accessCode)}
-                  disabled={accessCode.length !== 6 || loading}
-                  className="w-full bg-gradient-primary shadow-custom-lg hover:shadow-custom-xl transition-all"
-                >
-                  {loading ? "Verifying..." : "Verify Code"}
-                </Button>
-              )}
-
-              {fileInfo && (
-                <div className="space-y-4 pt-4 border-t border-border">
-                  <div className="flex items-center gap-3 p-4 rounded-lg bg-muted">
-                    <div className="p-2 rounded-lg bg-primary/10">
-                      <File className="w-6 h-6 text-primary" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-foreground truncate">
-                        {fileInfo.file_name}
-                      </p>
-                      <p className="text-sm text-muted-foreground">
-                        {formatFileSize(fileInfo.file_size)}
-                      </p>
-                    </div>
-                  </div>
-
-                  <Button
-                    onClick={handleDownload}
-                    disabled={downloading}
-                    className="w-full bg-gradient-primary shadow-custom-lg hover:shadow-custom-xl transition-all"
-                  >
-                    <Download className="w-4 h-4 mr-2" />
-                    {downloading ? "Downloading..." : "Download File"}
-                  </Button>
-
-                  <p className="text-xs text-center text-muted-foreground">
-                    Downloaded {fileInfo.download_count} time
-                    {fileInfo.download_count !== 1 ? "s" : ""}
-                  </p>
-                </div>
-              )}
+              <Button
+                onClick={handleDownload}
+                disabled={downloading || !accessCode.trim()}
+                className="w-full bg-gradient-primary shadow-custom-lg hover:shadow-custom-xl transition-all"
+                size="lg"
+              >
+                {downloading ? (
+                  <>
+                    <span className="animate-spin mr-2">⏳</span>
+                    Downloading...
+                  </>
+                ) : (
+                  <>
+                    <DownloadIcon className="w-4 h-4 mr-2" />
+                    Download File
+                  </>
+                )}
+              </Button>
             </div>
-          </Card>
+
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <p className="text-xs text-blue-800">
+                <strong>ℹ️ Note:</strong> Your file will be automatically
+                decrypted by the backend before download.
+                {user ? (
+                  <span className="block mt-2">
+                    <strong>Your role ({user.role}):</strong> Will be used for
+                    access control
+                  </span>
+                ) : (
+                  <span className="block mt-2">
+                    <strong>Downloading as:</strong> Guest user
+                  </span>
+                )}
+              </p>
+            </div>
+          </div>
         </div>
       </main>
     </div>

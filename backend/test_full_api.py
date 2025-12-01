@@ -24,17 +24,21 @@ user1_data = {
 response = requests.post(f"{BASE_URL}/register", json=user1_data)
 print(f"Status: {response.status_code}")
 
-if response.status_code in [201, 409]:
+try:
+    result = response.json()
     if response.status_code == 201:
-        user1 = response.json()
+        user1 = result
+        print(f"BCID: {user1['bcid']}")
+        print("✓ User 1 registered")
+    elif response.status_code == 409:
+        print("User already exists - continuing with test...")
+        # For testing, create a dummy user1 object
+        user1 = {'bcid': user1_data['username']}
     else:
-        # If exists, create user object (won't be tested further without GET endpoint)
-        print("User already exists - skipping this test run")
-        exit(0)
-    print(f"BCID: {user1['bcid']}")
-    print("✓ User 1 registered")
-else:
-    print(f"✗ Failed: {response.json()}")
+        print(f"✗ Failed: {result}")
+        exit(1)
+except Exception as e:
+    print(f"✗ Error parsing response: {e}")
     exit(1)
 
 # Test 2: Register User 2
@@ -52,16 +56,20 @@ user2_data = {
 response = requests.post(f"{BASE_URL}/register", json=user2_data)
 print(f"Status: {response.status_code}")
 
-if response.status_code in [201, 409]:
+try:
+    result = response.json()
     if response.status_code == 201:
-        user2 = response.json()
+        user2 = result
+        print(f"BCID: {user2['bcid']}")
+        print("✓ User 2 registered")
+    elif response.status_code == 409:
+        print("User already exists - continuing...")
+        user2 = {'bcid': user2_data['username']}
     else:
-        print("User already exists - skipping this test run")
-        exit(0)
-    print(f"BCID: {user2['bcid']}")
-    print("✓ User 2 registered")
-else:
-    print(f"✗ Failed: {response.json()}")
+        print(f"✗ Failed: {result}")
+        exit(1)
+except Exception as e:
+    print(f"✗ Error parsing response: {e}")
     exit(1)
 
 # Test 3: Upload file
@@ -70,7 +78,6 @@ files = {
     'file': ('engineering_doc.txt', b'This is a confidential engineering document with technical specifications.', 'text/plain')
 }
 upload_data = {
-    'username': user1['username'],
     'bcid': user1['bcid'],
     'access_policy': json.dumps({
         'role': 'engineer',
@@ -81,22 +88,27 @@ upload_data = {
 response = requests.post(f"{BASE_URL}/upload", files=files, data=upload_data)
 print(f"Status: {response.status_code}")
 
-if response.status_code == 201:
-    upload_result = response.json()
-    file_cid = upload_result['cid']
-    print(f"CID: {file_cid}")
-    print("✓ File uploaded")
-else:
-    print(f"✗ Failed: {response.json()}")
+try:
+    result = response.json()
+    if response.status_code == 201:
+        upload_result = result
+        file_cid = upload_result['cid']
+        print(f"CID: {file_cid}")
+        print("✓ File uploaded")
+    else:
+        print(f"✗ Failed: {result}")
+        exit(1)
+except Exception as e:
+    print(f"✗ Error: {e}")
     exit(1)
 
-print("\n⏳ Waiting for blockchain...")
+print("\n⏳ Waiting for blockchain confirmation...")
 time.sleep(3)
 
 # Test 4: User 1 downloads (authorized)
 print("\n4. User 1 (Engineer/IT) downloading file...")
 download_data = {
-    'bcid': user1['bcid']  # Changed: send BCID not username
+    'bcid': user1['bcid']
 }
 
 response = requests.post(f"{BASE_URL}/download/{file_cid}", json=download_data)
@@ -114,7 +126,7 @@ else:
 # Test 5: User 2 downloads (unauthorized)
 print("\n5. User 2 (Manager/HR) downloading file...")
 download_data = {
-    'bcid': user2['bcid']  # Changed: send BCID not username
+    'bcid': user2['bcid']
 }
 
 response = requests.post(f"{BASE_URL}/download/{file_cid}", json=download_data)
@@ -125,17 +137,19 @@ if response.status_code == 403:
 elif response.status_code == 200:
     print(f"✗ Access granted (should be denied)")
 else:
-    print(f"✓ Access denied")
+    print(f"✓ Access denied: {response.status_code}")
 
 # Test 6: List files
 print("\n6. Listing files for User 1...")
-response = requests.get(f"{BASE_URL}/files/{user1['bcid']}")  # Changed: use BCID
+response = requests.get(f"{BASE_URL}/files/{user1['bcid']}")
 print(f"Status: {response.status_code}")
 
 if response.status_code == 200:
     files_data = response.json()
-    print(f"Files: {len(files_data.get('files', []))}")
+    print(f"Owned files: {files_data.get('total_owned', 0)}")
     print("✓ Files listed")
+else:
+    print(f"⚠ Error: {response.json()}")
 
 # Test 7: Get metadata
 print("\n7. Getting file metadata...")
@@ -145,15 +159,19 @@ print(f"Status: {response.status_code}")
 if response.status_code == 200:
     metadata = response.json()
     print(f"✓ Metadata: {metadata.get('filename', 'N/A')}")
+else:
+    print(f"⚠ Error")
 
 # Test 8: Access logs
 print("\n8. Getting access logs for file...")
-response = requests.get(f"{BASE_URL}/logs/{file_cid}")  # Changed: pass CID
+response = requests.get(f"{BASE_URL}/logs/{file_cid}")
 print(f"Status: {response.status_code}")
 
 if response.status_code == 200:
     logs = response.json()
-    print(f"✓ Logs: {len(logs.get('logs', []))} entries")
+    print(f"✓ Logs: {logs.get('total', 0)} entries")
+else:
+    print(f"⚠ Error")
 
 # Test 9: Stats
 print("\n9. Getting statistics...")
@@ -163,6 +181,8 @@ print(f"Status: {response.status_code}")
 if response.status_code == 200:
     stats = response.json()
     print(f"✓ Users: {stats.get('total_users')}, Files: {stats.get('total_files')}")
+else:
+    print(f"⚠ Error")
 
 print("\n" + "=" * 60)
 print("✅ All API tests completed!")
